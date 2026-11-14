@@ -1,13 +1,13 @@
-"""ROS-independent coverage waypoint and obstacle-aware open-TSP planner."""
-
 import heapq
 import math
 import time
+
 
 import cv2
 import numpy as np
 
 
+# Coverage waypoints
 def _world_to_cell(x, y, origin, yaw, resolution):
     dx, dy = x - origin[0], y - origin[1]
     co, si = math.cos(yaw), math.sin(yaw)
@@ -24,17 +24,11 @@ def _cell_to_world(row, col, origin, yaw, resolution):
 
 def evenly_spaced_waypoints(grid, start, origin, yaw, resolution,
                             clearance=0.35, count=50):
-    """Farthest-point sampling over robot-reachable free map cells.
-
-    The points are spatially dispersed, not an exact uniform square lattice.
-    Only the connected free-space component nearest to the robot is used.
-    """
     empty = np.asarray(grid)
     free = (empty >= 0) & (empty < 20)
     if not np.any(free) or count <= 0:
         return []
 
-    # The robot has a radius: candidate navigation goals need wall clearance.
     dist_to_wall = cv2.distanceTransform(free.astype(np.uint8), cv2.DIST_L2, 5)
     clear_px = max(1, int(math.ceil(clearance / resolution)))
     good = free & (dist_to_wall >= clear_px)
@@ -47,13 +41,10 @@ def evenly_spaced_waypoints(grid, start, origin, yaw, resolution,
                             (good_rc[:, 1] - cc) ** 2))
     seed_r, seed_c = good_rc[nearest]
 
-    # Connectivity is evaluated with LESS clearance than navigation goals.
-    # Otherwise a 0.6 m doorway may artificially split two reachable rooms.
     passable = free & (dist_to_wall >= max(1, int(math.ceil(0.10 / resolution))))
     _, components = cv2.connectedComponents(passable.astype(np.uint8), connectivity=8)
     group = good & (components == components[seed_r, seed_c])
 
-    # A 0.25 m lattice limits candidate count but remains finer than stop spacing.
     stride = max(1, int(round(0.25 / resolution)))
     sample_mask = np.zeros_like(group, dtype=bool)
     sample_mask[stride // 2::stride, stride // 2::stride] = True
@@ -81,6 +72,7 @@ def evenly_spaced_waypoints(grid, start, origin, yaw, resolution,
             for i in selected]
 
 
+# Grid distances
 def _closest_passable(passable, rc, radius=5):
     rr, cc = rc
     h, w = passable.shape
@@ -96,7 +88,6 @@ def _closest_passable(passable, rc, radius=5):
 
 
 def _dijkstra_to_targets(passable, src, targets, resolution):
-    """Shortest 8-connected grid distances, preventing diagonal corner cuts."""
     h, w = passable.shape
     distances = np.full((h, w), np.inf, dtype=np.float64)
     destinations = {}
@@ -135,11 +126,6 @@ def _dijkstra_to_targets(passable, src, targets, resolution):
 
 
 def travel_matrix(grid, locations, origin, yaw, resolution, max_seconds=12.0):
-    """Approximate Nav2 path distances for [waypoints..., initial robot pose].
-
-    Dijkstra on a reduced occupancy grid; geometric fallback if reduced map
-    disconnects a corridor or a computation budget is exceeded.
-    """
     n = len(locations)
     pts = np.asarray(locations, dtype=np.float64)
     if n < 2:
@@ -150,7 +136,7 @@ def travel_matrix(grid, locations, origin, yaw, resolution, max_seconds=12.0):
     h, w = free.shape
     coarse_h = max(1, math.ceil(h / step))
     coarse_w = max(1, math.ceil(w / step))
-    # Mean free occupancy: solid walls block routes without filling corridors.
+
     coarse = cv2.resize(free.astype(np.float32), (coarse_w, coarse_h),
                         interpolation=cv2.INTER_AREA) >= 0.78
     coarse_res = resolution * step
@@ -169,7 +155,7 @@ def travel_matrix(grid, locations, origin, yaw, resolution, max_seconds=12.0):
             break
         row = _dijkstra_to_targets(coarse, cells[i], cells, coarse_res)
         matrix[i, :] = row
-    # Pairwise distances must be symmetric for our 2-opt optimization.
+
     for i in range(n):
         for j in range(i + 1, n):
             a, b = matrix[i, j], matrix[j, i]
@@ -180,12 +166,13 @@ def travel_matrix(grid, locations, origin, yaw, resolution, max_seconds=12.0):
             elif math.isfinite(b):
                 distance = b
             else:
-                # Discourage an unverified straight line through a wall.
+
                 distance = 3.5 * eucl[i, j] + 2.0
             matrix[i, j] = matrix[j, i] = distance
     return matrix, ('grid' if complete else 'grid+fallback')
 
 
+# Route optimization
 def route_length(route, start_index, costs):
     current = start_index
     total = 0.0
@@ -196,7 +183,6 @@ def route_length(route, start_index, costs):
 
 
 def tsp_path(indices, start_index, costs, max_rounds=40):
-    """Nearest-neighbor + 2-opt OPEN TSP (no return-to-origin)."""
     not_visited = set(indices)
     route = []
     current = start_index
@@ -228,3 +214,22 @@ def tsp_path(indices, start_index, costs, max_rounds=40):
         if not improved:
             break
     return route
+
+
+# Wide-area priorities
+def coverage_anchors(points, start, count=6):
+    if not points or count <= 0:
+        return []
+    xy = np.asarray(points, dtype=float)
+    start_xy = np.asarray(start[:2], dtype=float)
+
+    distances = np.sum((xy - start_xy) ** 2, axis=1)
+    selected = []
+    for _ in range(min(int(count), len(points))):
+        idx = int(np.argmax(distances))
+        if idx in selected:
+            break
+        selected.append(idx)
+        distances = np.minimum(distances, np.sum((xy - xy[idx]) ** 2, axis=1))
+        distances[selected] = -1.0
+    return selected

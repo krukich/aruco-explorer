@@ -1,15 +1,16 @@
-"""Standalone smoke test; run with: python3 tests/test_planner.py"""
 from pathlib import Path
 import sys
 
+
 import numpy as np
+
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 from planner import evenly_spaced_waypoints, travel_matrix, tsp_path, route_length
 
 
 def main():
-    # Large two-room map, separated by a wall with one 0.6 m doorway.
+
     grid = np.zeros((150, 220), dtype=np.int16)
     grid[:, 110:113] = 100
     grid[65:71, 110:113] = 0

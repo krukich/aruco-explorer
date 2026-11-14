@@ -14,7 +14,7 @@ install(PROGRAMS scripts/search.py
   DESTINATION lib/${PROJECT_NAME}
   RENAME search
 )
-install(FILES scripts/planner.py
+install(FILES scripts/planner.py scripts/avoidance.py scripts/approach.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
