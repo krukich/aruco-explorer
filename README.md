@@ -177,7 +177,7 @@ ros2 action send_goal \
   --feedback
 ```
 
-The robot will autonomously navigate through the environment, detect ArUco markers, estimate their positions, and return the results.
+The robot autonomously explores the environment, detects ArUco markers while moving, approaches detected markers for accurate localization, and returns their estimated positions.
 
 The exploration ends when all five markers are found or the search reaches its completion condition.
 
@@ -224,7 +224,9 @@ Marker positions change between simulation runs.
 
 The robot receives an occupancy grid from `/map`.
 
-The exploration planner generates up to 50 candidate waypoints distributed across accessible free space.
+The exploration planner generates up to **24 candidate waypoints** distributed across accessible free space.
+
+Widely separated waypoints are prioritized to encourage early exploration of different areas.
 
 ### 2. Route Optimization
 
@@ -240,7 +242,11 @@ This provides an approximate solution to the Traveling Salesman Problem (TSP).
 
 The robot navigates between selected waypoints using the Nav2 `/navigate_to_pose` Action.
 
-Nav2 handles path planning, local obstacle avoidance, and robot movement.
+Nav2 handles path planning and robot movement.
+
+The system also maintains small virtual exclusion zones around confirmed ArUco markers and uses intermediate waypoints to avoid driving through them.
+
+Each exclusion zone covers approximately **29 × 29 cm**, including a 10 cm margin around the marker cube.
 
 ### 4. Adaptive Exploration
 
@@ -250,7 +256,7 @@ The system maintains an approximate representation of previously observed areas.
 
 Waypoints that are unlikely to provide useful new observations can be skipped.
 
-The robot performs 360° scans only when additional coverage is expected.
+The robot performs rotational scans when additional coverage is expected.
 
 This reduces unnecessary stops and repeated scanning.
 
@@ -258,11 +264,19 @@ This reduces unnecessary stops and repeated scanning.
 
 ArUco markers are detected using OpenCV.
 
-Their positions relative to the camera are estimated using camera calibration parameters.
+Detection runs continuously during navigation, without a fixed maximum detection distance.
+
+When a new marker is detected, the robot can temporarily interrupt its exploration route and approach the marker for more accurate localization.
+
+The approach uses short navigation steps and maintains a preferred scanning distance of approximately **2.1 m**.
+
+Marker positions relative to the camera are estimated using camera calibration parameters.
 
 TF2 transforms these positions into the global `map` coordinate frame.
 
-Multiple observations are combined to improve localization stability.
+Three consistent camera observations are used to confirm the estimated marker position.
+
+After localization, the robot resumes exploration.
 
 ### 6. Returning Results
 
