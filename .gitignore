@@ -2,7 +2,13 @@ build/
 install/
 log/
 __pycache__/
-*.pyc
-.pytest_cache/
-.vscode/
+*.py[cod]
 .idea/
+.vscode/
+.DS_Store
+*.log
+*.db3
+*.mcap
+*.zip
+*.tar.gz
+dist/

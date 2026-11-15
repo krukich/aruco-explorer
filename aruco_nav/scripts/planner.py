@@ -11,34 +11,37 @@ import numpy as np
 def _world_to_cell(x, y, origin, yaw, resolution):
     dx, dy = x - origin[0], y - origin[1]
     co, si = math.cos(yaw), math.sin(yaw)
-    return ((-si * dx + co * dy) / resolution,
-            (co * dx + si * dy) / resolution)
+    return ((-si * dx + co * dy) / resolution, (co * dx + si * dy) / resolution)
 
 
 def _cell_to_world(row, col, origin, yaw, resolution):
     xx, yy = (col + 0.5) * resolution, (row + 0.5) * resolution
     co, si = math.cos(yaw), math.sin(yaw)
-    return (origin[0] + co * xx - si * yy,
-            origin[1] + si * xx + co * yy)
+    return (origin[0] + co * xx - si * yy, origin[1] + si * xx + co * yy)
 
 
-def evenly_spaced_waypoints(grid, start, origin, yaw, resolution,
-                            clearance=0.35, count=50):
+def evenly_spaced_waypoints(
+    grid, start, origin, yaw, resolution, clearance=0.35, count=50
+):
     empty = np.asarray(grid)
     free = (empty >= 0) & (empty < 20)
     if not np.any(free) or count <= 0:
         return []
 
-    dist_to_wall = cv2.distanceTransform(free.astype(np.uint8), cv2.DIST_L2, 5)
+    dist_to_wall = cv2.distanceTransform(
+        np.pad(free.astype(np.uint8), 1), cv2.DIST_L2, 5
+    )[1:-1, 1:-1]
     clear_px = max(1, int(math.ceil(clearance / resolution)))
     good = free & (dist_to_wall >= clear_px)
+    edge = int(math.ceil((clearance + 0.35) / resolution))
+    good[:edge, :] = good[-edge:, :] = False
+    good[:, :edge] = good[:, -edge:] = False
     if not np.any(good):
         return []
 
     rr, cc = _world_to_cell(start[0], start[1], origin, yaw, resolution)
     good_rc = np.column_stack(np.nonzero(good))
-    nearest = int(np.argmin((good_rc[:, 0] - rr) ** 2 +
-                            (good_rc[:, 1] - cc) ** 2))
+    nearest = int(np.argmin((good_rc[:, 0] - rr) ** 2 + (good_rc[:, 1] - cc) ** 2))
     seed_r, seed_c = good_rc[nearest]
 
     passable = free & (dist_to_wall >= max(1, int(math.ceil(0.10 / resolution))))
@@ -47,12 +50,12 @@ def evenly_spaced_waypoints(grid, start, origin, yaw, resolution,
 
     stride = max(1, int(round(0.25 / resolution)))
     sample_mask = np.zeros_like(group, dtype=bool)
-    sample_mask[stride // 2::stride, stride // 2::stride] = True
+    sample_mask[stride // 2 :: stride, stride // 2 :: stride] = True
     rc = np.column_stack(np.nonzero(group & sample_mask))
     if len(rc) < count:
         rc = np.column_stack(np.nonzero(group))
         if len(rc) > 12000:
-            rc = rc[::int(math.ceil(len(rc) / 12000))]
+            rc = rc[:: int(math.ceil(len(rc) / 12000))]
     if len(rc) == 0:
         return []
 
@@ -68,8 +71,10 @@ def evenly_spaced_waypoints(grid, start, origin, yaw, resolution,
         selected.append(i)
         nearest2 = np.minimum(nearest2, np.sum((xy - xy[i]) ** 2, axis=1))
         nearest2[i] = -1.0
-    return [_cell_to_world(int(rc[i, 0]), int(rc[i, 1]), origin, yaw, resolution)
-            for i in selected]
+    return [
+        _cell_to_world(int(rc[i, 0]), int(rc[i, 1]), origin, yaw, resolution)
+        for i in selected
+    ]
 
 
 # Grid distances
@@ -99,12 +104,16 @@ def _dijkstra_to_targets(passable, src, targets, resolution):
         return out
     distances[src] = 0.0
     todo = [(0.0, src[0], src[1])]
-    steps = [(-1, 0, resolution), (1, 0, resolution),
-             (0, -1, resolution), (0, 1, resolution),
-             (-1, -1, resolution * math.sqrt(2)),
-             (-1, 1, resolution * math.sqrt(2)),
-             (1, -1, resolution * math.sqrt(2)),
-             (1, 1, resolution * math.sqrt(2))]
+    steps = [
+        (-1, 0, resolution),
+        (1, 0, resolution),
+        (0, -1, resolution),
+        (0, 1, resolution),
+        (-1, -1, resolution * math.sqrt(2)),
+        (-1, 1, resolution * math.sqrt(2)),
+        (1, -1, resolution * math.sqrt(2)),
+        (1, 1, resolution * math.sqrt(2)),
+    ]
     while todo and destinations:
         cost, row, col = heapq.heappop(todo)
         if cost > distances[row, col]:
@@ -137,8 +146,12 @@ def travel_matrix(grid, locations, origin, yaw, resolution, max_seconds=12.0):
     coarse_h = max(1, math.ceil(h / step))
     coarse_w = max(1, math.ceil(w / step))
 
-    coarse = cv2.resize(free.astype(np.float32), (coarse_w, coarse_h),
-                        interpolation=cv2.INTER_AREA) >= 0.78
+    coarse = (
+        cv2.resize(
+            free.astype(np.float32), (coarse_w, coarse_h), interpolation=cv2.INTER_AREA
+        )
+        >= 0.78
+    )
     coarse_res = resolution * step
     cells = []
     for x, y in locations:
@@ -206,7 +219,7 @@ def tsp_path(indices, start_index, costs, max_rounds=40):
                     old += costs[last, after]
                     new += costs[first, after]
                 if new + 1e-6 < old:
-                    route[a:b + 1] = reversed(route[a:b + 1])
+                    route[a : b + 1] = reversed(route[a : b + 1])
                     improved = True
                     break
             if improved:
