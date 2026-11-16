@@ -283,16 +283,24 @@ After localization, the robot resumes exploration.
 The custom ROS 2 Action Server returns the detected marker IDs and estimated positions.
 
 ## ROS 2 Interfaces
-
 ### Subscribed Topics
 
-| Topic | Purpose |
-|---|---|
-| `/camera/image_raw` | RGB camera images |
-| `/camera/camera_info` | Camera calibration |
-| `/map` | Occupancy grid |
-| `/tf` | Coordinate transformations |
-| `/tf_static` | Static transformations |
+| Topic | Message Type | Purpose |
+|---|---|---|
+| `/camera/image_raw` | `sensor_msgs/msg/Image` | RGB camera images |
+| `/camera/camera_info` | `sensor_msgs/msg/CameraInfo` | Camera calibration parameters |
+| `/map` | `nav_msgs/msg/OccupancyGrid` | Occupancy grid used for exploration planning |
+| `/odom` | `nav_msgs/msg/Odometry` | Robot motion and odometry information |
+| `/tf` | `tf2_msgs/msg/TFMessage` | Dynamic coordinate transformations |
+| `/tf_static` | `tf2_msgs/msg/TFMessage` | Static coordinate transformations |
+
+The node uses a TF2 TransformListener to access coordinate
+transformations. The `/tf` and `/tf_static` topics are handled
+internally by TF2.
+
+AMCL provides robot localization on the known map.
+The search node obtains the robot pose through TF2
+rather than subscribing directly to `/amcl_pose`.
 
 ### Nav2 Actions
 
